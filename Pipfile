@@ -16,6 +16,7 @@ ulid2 = "*"
 Pillow = "*"
 pycryptodome = "*"
 opencv-contrib-python-headless = "*"
+num2words = "*"
 
 [requires]
 python_version = "3.9"

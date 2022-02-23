@@ -134,7 +134,7 @@ class QRLabeler:
                     cv2.line(img, pt1, pt2, color=(0, 255, 0), thickness=6)
 
         temp_file = tempfile.NamedTemporaryFile(
-            prefix="rendered", suffix=".png", delete=False
+            prefix="rendered", suffix=".webp", delete=False
         )
 
         cv2.imwrite(temp_file.name, img)

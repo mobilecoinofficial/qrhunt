@@ -41,6 +41,7 @@ class MobFriend(QuestionBot):
         self.seen_valhashes = aPersistDict("seen_valhashes")
         self.user_claims = aPersistDict("user_claims")
         self.user_points = aPersistDict("user_points")
+        self.user_total = aPersistDict("user_total")
         self.notes = aPersistDict("notes")
         self.user_images: dict[str, str] = {}
         self.labeler = QRLabeler()
@@ -49,7 +50,11 @@ class MobFriend(QuestionBot):
         super().__init__()
 
     async def handle_message(self, message: Message) -> Response:
-        if message.attachments and len(message.attachments) and message.arg0 != 'set_profile':
+        if (
+            message.attachments
+            and len(message.attachments)
+            and message.arg0 != "set_profile"
+        ):
             await self.send_message(
                 message.uuid, "Thanks for your submission! Let me take a look!"
             )
@@ -88,6 +93,12 @@ class MobFriend(QuestionBot):
                 return await self.do_check(message)
         return await super().handle_message(message)
 
+    async def do_points(self, msg: Message) -> Response:
+        """points
+        Returns how many points a user has gained!"""
+        points = await self.user_points.get(msg.uuid, 0)
+        return f"You have {points} points!"
+
     async def do_check(self, msg: Message) -> Response:
         user = msg.uuid
         user_claims = await self.user_claims.get(user)
@@ -104,7 +115,7 @@ class MobFriend(QuestionBot):
             )
         await self.user_claims.increment(user, 1)
         if (user_claims or 0) > 100:
-            return "Sorry, try again later!"
+            return "Please use the 'unlock' command to prove you're a human!"
         queue = aioprocessing.AioQueue()
         async with self.processing_lock:
             p = aioprocessing.AioProcess(
@@ -126,13 +137,13 @@ class MobFriend(QuestionBot):
                     or ahash in await self.seen_ahashes.keys()
                 ):
                     return "I've already seen this image!"
-                if (val0 or val1):
+                if val0 or val1:
                     safe_val = get_safe_key(val0 or val1 or squareish)
                     if safe_val in await self.seen_valhashes.keys():
                         return "Hey, this value looks pretty familiar..."
                     await self.seen_valhashes.set(safe_val, user)
                 points = [
-                    2 ** (i) if x not in [None, ''] else 0
+                    2 ** (i) if x not in [None, ""] else 0
                     for (i, x) in enumerate((squareish, val0, val1))
                 ]
                 await self.seen_phashes.set(phash, user)
@@ -148,12 +159,15 @@ class MobFriend(QuestionBot):
             except asyncio.TimeoutError:
                 await self.send_message(user, "Sorry, no luck!")
 
-    async def do_signalme(self, _: Message) -> Response:
+    async def do_unlock(self, msg: Message) -> Response:
+        """unlock
+        Presents a CAPTCHA challenge to the user, then resets the claim counter from 100 to 0.
         """
-        /signalme
-
-        Returns a link to share the bot with friends!"""
-        return f"https://signal.me/#p/{self.bot_number}"
+        user = msg.uuid
+        challenged = await self.do_challenge(msg)
+        await self.user_total.increment(user, await self.user_claims.get(user))
+        await self.user_claims.set(user, 1)
+        return challenged
 
     # pylint: disable=too-many-branches,too-many-return-statements
     async def default(self, message: Message) -> Response:
@@ -165,16 +179,6 @@ class MobFriend(QuestionBot):
             return await self.do_yes(msg)
         elif code == "n":
             return await self.do_no(msg)
-        elif code == "help" and msg.arg1:
-            try:
-                doc = getattr(self, f"do_{msg.arg1}").__doc__
-                if doc:
-                    if hasattr(getattr(self, f"do_{msg.arg1}"), "hide"):
-                        raise AttributeError("Pretend this never happened.")
-                    return dedent(doc).strip().lstrip("/")
-                return f"{msg.arg1} isn't documented, sorry :("
-            except AttributeError:
-                return f"No such command '{msg.arg1}'"
         if msg.arg0 and msg.arg0.isalnum() and len(msg.arg0) > 100 and not msg.tokens:
             msg.arg1 = msg.full_text
             return await self.do_check(msg)
@@ -203,13 +207,11 @@ class MobFriend(QuestionBot):
             return "\n\n".join(
                 [
                     "Hi, I'm MOBot!",
-                    "Today I'm hunting for QR codes! If you send me QR codes (or things that look close enough) you can earn points!\nCollecting enough points will unlock secret levels and special bonuses!"
+                    self.documented_commands(),
+                    "Today I'm hunting for QR codes! If you send me QR codes (or things that look close enough) you can earn points!\nCollecting enough points will unlock secret levels and special bonuses!",
                 ]
             )
         return None
-
-    async def do_help(self, msg: Message) -> Response:
-        return await self.default(msg)
 
 
 if __name__ == "__main__":
